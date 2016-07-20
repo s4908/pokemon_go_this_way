@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="UTF-8">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <!-- Latest compiled and minified CSS -->
+    
+
+
+    <script src="https://maps.googleapis.com/maps/api/js"
+            async defer>
+    </script>
+    <script type="text/javascript" src="https://hpneo.github.io/gmaps/gmaps.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.2.2/semantic.min.css">
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.2.2/semantic.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vue/1.0.26/vue.min.js"></script>
+    <title>pokemon</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .pusher {
+          height: 100%;
+        }
+        #map {
+            height: 100%;
+        }
+        .sidebar_title {
+          color: white;
+          font-size: 20px;
+          margin: 12px;
+        }
+        .sidebar_title img {
+          vertical-align: sub; 
+          width: 25px;
+        }
+
+        .ui.dropdown .menu {
+            left: 10px;
+        }
+
+        .location_item {
+          width: 100%;
+          border-bottom: 1px solid #333333;
+        }
+        .alert {
+          position: absolute;
+          top: 30px;
+          left: 50%;
+          z-index: 9999;
+          transform: translateX(-50%);
+        }
+        .alert i {
+          color: white;
+          cursor: pointer;
+        }
+        .alert i:nth-child(2) {
+          padding-left: 5px;
+        }
+        #gmaps_context_menu {
+          z-index: 9999;
+        }
+
+    </style>
+</head>
+<body>
+  <div id="app" class="ui sidebar inverted vertical menu">
+    <div class="sidebar_title"><img src="/imgs/location.svg"> My Locations</div>
+    <div v-for="location in locations">
+      <div class="ui dropdown location_item">
+         <a class="item" v-on:click="panTo(location)"> #{{ location.title }} </a>
+        <div class="menu" >
+          <div class="item" v-on:click="moveTo(location)">Walk to</div>
+          <div class="item" v-on:click="panTo(location)">Jump to</div>
+          <div class="item" v-on:click="backAndForth(location)">Back n forth</div>
+        </div>
+      </div>
+    
+    </div>
+  </div>
+  <div class="pusher">
+    <div id="alert" class="alert" v-bind:style="{display: timer.id == 0 ? 'none' : 'block'}" >
+      <div class="ui image label" v-bind:class="{'green': !timer.pause, 'orange': timer.pause}">
+        Auto Moving . . . {{ timer.id }}
+        <div class="detail" > 
+          <i v-on:click="tooglePause()" class="icon" v-bind:class="{'play': timer.pause, 'pause': !timer.pause}"></i>
+           | 
+          <i class="stop icon" v-on:click="stop()"></i> 
+        </div>  
+      </div>
+    </div>  
+    <div id="map"></div>
+  </div>
+  
+  <div id="addLocModal" class="ui small modal">
+    <i class="close icon"></i>
+    <div class="header">
+      <i class="map pin icon"></i>Add Location
+    </div>
+    <div class="content">
+      <div class="ui input">
+        <input type="text" placeholder="Title" v-model="newLocationTitle">
+      </div>
+      <br><br>lat: {{ location.lat }}<br> lng: {{ location.lng }}
+    </div>
+    <div class="actions">
+      <div class="ui black deny button">
+        Cancel
+      </div>
+      <div v-on:click="add()" class="ui positive right labeled icon button">
+        Add
+        <i class="checkmark icon"></i>
+      </div>
+    </div>
+  </div>
+<script>
+  var timer = {id: 0, pause: false};
+  var step_distance = 0.000025;
+  var my_pos = {lat:-33.862774,lng:151.195807};
+  var my_locations = [];
+  // var my_locations = [
+  //   {title: "Hourigan International", lat:-33.862774,lng:151.195807},
+  //   {title: "Doltone House", lat:-33.863434,lng:151.195093},
+  //   {title: "Broadway", lat:-33.87941,lng:151.1925},
+  //   {title: "MATIX", lat: -33.8744974,lng: 151.2033436},
+  //   {title: "SOPPP", lat: -33.8704974,lng: 151.2093436}
+  // ];
+
+  var styles = [
+    {
+      stylers: [
+        //{ hue: "#ff0000" },
+        { saturation: -60 },
+        //{ invert_lightness: true },
+        //{ lightness: 7}
+      ]
+    }
+  ];
+
+  var map = new GMaps({
+    div: '#map',
+    lat: my_pos.lat,
+    lng: my_pos.lng,
+    zoom: 18,
+    keyboardShortcuts: false
+  });
+  map.setOptions({styles: styles});
+  
+  var marker = map.addMarker({
+    lat: my_pos.lat,
+    lng: my_pos.lng,
+    title: 'You',
+    icon: 'http://www.penceland.com/images/google_map_man.gif'
+  });
+  //marker.setIcon('http://chart.apis.google.com/chart?chst=d_map_pin_letter&chld=*|3384ff|000000');
+
+  map.addControl({
+    position: 'top_left',
+    content: 'My Locations',
+    style: {
+      margin: '11px',
+      lineHeight: '33px',
+      padding: '0px 7px',
+      background: '#fff'
+    },
+    events: {
+      click: function(){
+        $('.ui.sidebar').sidebar('setting', { dimPage: false}).sidebar('toggle')
+      }
+    }
+  });
+  $.ajax('/previous_location')
+      .done(function(res){
+        my_pos = res;
+        marker.setPosition(my_pos);
+        map.map.panTo(my_pos);
+      });
+  map.setContextMenu({
+    control: 'map',
+    options: [{
+      title: 'Add marker',
+      name: 'add_marker',
+      action: function(e) {
+        new_location.lat = e.latLng.lat();
+        new_location.lng = e.latLng.lng();
+        $('.ui.modal')
+          .modal('show')
+        ;
+
+      }
+    }, {
+      title: 'Center here',
+      name: 'center_here',
+      action: function(e) {
+        this.setCenter(e.latLng.lat(), e.latLng.lng());
+      }
+    }]
+  });
+
+  google.maps.event.addDomListener(document, 'keydown', function (event) {   
+    if ([37, 38, 39, 40].indexOf(event.keyCode) != -1) {
+      timer.pause = true;
+      var offset = 0.0001 + Math.random() / 100000;
+      if (event.keyCode == 37) { // left
+          my_pos.lng -= offset;
+      }
+      if (event.keyCode == 38) { // up
+          my_pos.lat += offset;
+      }
+      if (event.keyCode == 39) { // right
+          my_pos.lng += offset;
+      }
+      if (event.keyCode == 40) { // down
+          my_pos.lat -= offset;
+      }
+
+      map.map.panTo(my_pos);
+      marker.setPosition(my_pos);
+      
+      
+      http_get('/pos?lat=' + my_pos.lat + '&lng=' + my_pos.lng);
+      event.preventDefault();
+    }
+    if(event.keyCode == 32){
+      timer.pause = !timer.pause;
+    }
+  });
+
+
+  $.ajax('/my_locations')
+    .done(function(res){
+      my_locations.push.apply(my_locations, res.results);
+      loadMyMarkers(map);
+    });
+  function loadMyMarkers(map){
+    my_locations.forEach(function(marker){
+      map.addMarker(marker);
+    });
+  }
+  
+  function moveTo(location){
+    if(timer.id !== 0) stopAutoMoving(timer);
+    timer.pause = false;
+    if( my_pos.lat - location.lat !== 0 && my_pos.lng - location.lng !== 0)
+    timer.id = setInterval(function () {
+      if(!timer.pause){
+        a = my_pos.lat - location.lat
+        b = my_pos.lng - location.lng
+        h = Math.sqrt(Math.pow(a,2) + Math.pow(b,2))
+
+        n_lat = my_pos.lat - step_distance * a/h + Math.random() / 100000;
+        n_lng = my_pos.lng - step_distance * b/h + Math.random() / 100000;
+        my_pos = {lat: n_lat, lng: n_lng}
+        map.map.panTo(my_pos);
+        marker.setPosition(my_pos);
+        http_get('/pos?lat=' + my_pos.lat + '&lng=' + my_pos.lng);
+        if(h < step_distance) stopAutoMoving(timer);
+      }
+    }, 500);
+  }
+
+  function backAndForth(location){
+    var current_location = $.extend( {}, my_pos );
+    var locations = [current_location, location]
+    var dest = 1;
+    if(timer.id !== 0) stopAutoMoving(timer);
+    timer.pause = false;
+    if( my_pos.lat - location.lat !== 0 && my_pos.lng - location.lng !== 0)
+    timer.id = setInterval(function () {
+      if(!timer.pause){
+        a = my_pos.lat - location.lat
+        b = my_pos.lng - location.lng
+        h = Math.sqrt(Math.pow(a,2) + Math.pow(b,2))
+
+        n_lat = my_pos.lat - step_distance * a/h + Math.random() / 100000;
+        n_lng = my_pos.lng - step_distance * b/h + Math.random() / 100000;
+        my_pos = {lat: n_lat, lng: n_lng}
+        map.map.panTo(my_pos);
+        marker.setPosition(my_pos);
+        http_get('/pos?lat=' + my_pos.lat + '&lng=' + my_pos.lng);
+        if(h < step_distance) {
+          dest == 0 ? dest = 1 : dest = 0;
+          stopAutoMoving(timer);
+          backAndForth(locations[dest]);
+        }
+      }
+    }, 500);
+  }
+
+  function stopAutoMoving(timer){
+    clearInterval( timer.id );
+    timer.id = 0;
+  }
+
+
+  function distance(lat1, lon1, lat2, lon2) {
+    var radlat1 = Math.PI * lat1/180
+    var radlat2 = Math.PI * lat2/180
+    var theta = lon1-lon2
+    var radtheta = Math.PI * theta/180
+    var dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
+    dist = Math.acos(dist)
+    dist = dist * 180/Math.PI
+    dist = dist * 60 * 1.1515 * 1.609344
+    return dist
+  }
+  function distance(lat1, lon1, lat2, lon2) {
+    var radlat1 = Math.PI * lat1/180
+    var radlat2 = Math.PI * lat2/180
+    var theta = lon1-lon2
+    var radtheta = Math.PI * theta/180
+    var dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
+    console.log(dist)
+    dist = Math.acos(dist)
+    console.log(dist)
+    dist = dist * 180/Math.PI
+    console.log(dist)
+    dist = dist * 60 * 1.1515 * 1.609344
+    console.log(dist)
+    return dist
+  }
+  a = 1.874775660093849 / (60 * 1.1515 * 1.609344)
+  a = a / 180 * Math.PI
+  1 / (60 * 1.1515 * 1.609344)
+
+
+  var vm = new Vue({
+    el: '#app',
+    data: {
+      locations: my_locations
+    },
+    methods: {
+      moveTo: function(location) {
+        moveTo(location);
+      },
+      panTo: function(location) {
+        map.map.panTo(location);
+      },
+      backAndForth: function(location){
+        backAndForth(location);
+      }
+    },
+    ready: function () {
+      // `this` points to the vm instance
+      console.log('a is: my_locations' + this)
+    }
+  })
+
+  vm.$watch('locations', function (newVal, oldVal) {
+    console.log('change');
+    $('.ui.dropdown')
+      .dropdown()
+    ;
+  })
+
+  new Vue({
+    el: '#alert',
+    data: {
+      timer: timer
+    },
+    methods:{
+      stop: function(){
+        stopAutoMoving(this.timer);
+      },
+      tooglePause: function(){
+        this.timer.pause = !this.timer.pause;
+      }
+    },
+    created: function () {
+      // `this` points to the vm instance
+      console.log('a is: ' + this)
+    }
+  })
+
+  var new_location = {lat:0, lng: 0};
+  new Vue({
+    el: '#addLocModal',
+    data: {
+      location: new_location
+    },
+    methods:{
+      add: function(){
+        title = this.newLocationTitle;
+        if(title.trim()=="") title = "New Location(1)";
+        var marker = {
+          lat: this.location.lat,
+          lng: this.location.lng,
+          title: title
+        };
+        map.addMarker(marker);
+        my_locations.push(marker);
+      }
+    }
+  })
+
+  $('.ui.dropdown')
+    .dropdown()
+  ;
+
+  function http_get(url) {
+      var xmlHttp = new XMLHttpRequest();
+      xmlHttp.open("GET", url, true);
+      xmlHttp.send(null);
+  }
+
+</script>
+
+</body>
+</html>
